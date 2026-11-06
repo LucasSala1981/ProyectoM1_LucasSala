@@ -1,0 +1,244 @@
+// ESTADO DE LA APLICACIÓN
+const state = {
+  size: 6,
+  format: 'HEX',
+  colors: [] // Estructura: { id, hex, rgb, hsl, locked }
+};
+
+// ELEMENTOS DEL DOM
+const paletteGrid = document.getElementById('paletteGrid');
+const generateBtn = document.getElementById('generateBtn');
+const paletteSizeSelect = document.getElementById('paletteSizeSelect');
+const colorFormatSelect = document.getElementById('colorFormatSelect');
+const toast = document.getElementById('toast');
+const toastMessage = document.getElementById('toastMessage');
+const srAnnouncements = document.getElementById('sr-announcements');
+
+let toastTimeout = null;
+
+// UTILIDADES DE CONVERSIÓN Y COLOR
+function generateRandomRGB() {
+  return {
+    r: Math.floor(Math.random() * 256),
+    g: Math.floor(Math.random() * 256),
+    b: Math.floor(Math.random() * 256)
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  const toHex = (n) => n.toString(16).padStart(2, '0').toUpperCase();
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function rgbToHsl({ r, g, b }) {
+  const rNorm = r / 255;
+  const gNorm = g / 255;
+  const bNorm = b / 255;
+
+  const max = Math.max(rNorm, gNorm, bNorm);
+  const min = Math.min(rNorm, gNorm, bNorm);
+  let h, s, l = (max + min) / 2;
+
+  if (max === min) {
+    h = s = 0; // Acromático
+  } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case rNorm: h = (gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0); break;
+      case gNorm: h = (bNorm - rNorm) / d + 2; break;
+      case bNorm: h = (rNorm - gNorm) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    l: Math.round(l * 100)
+  };
+}
+
+// CÁLCULO DE LUMINANCIA Y CONSTRASTE (WCAG 2.1)
+function getLuminance(r, g, b) {
+  const a = [r, g, b].map(v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
+}
+
+function isLightColor(r, g, b) {
+  return getLuminance(r, g, b) > 0.35;
+}
+
+// OBTENER REPRESENTACIÓN EN TEXTO SEGÚN FORMATO ELEGIDO
+function getColorString(colorObj, format) {
+  switch (format) {
+    case 'HEX':
+      return colorObj.hex;
+    case 'RGBA':
+      return `rgba(${colorObj.rgb.r}, ${colorObj.rgb.g}, ${colorObj.rgb.b}, 1)`;
+    case 'HSL':
+      return `hsl(${colorObj.hsl.h}, ${colorObj.hsl.s}%, ${colorObj.hsl.l}%)`;
+    default:
+      return colorObj.hex;
+  }
+}
+
+// LÓGICA DE PALETA
+function createColorObject(id) {
+  const rgb = generateRandomRGB();
+  return {
+    id: id || Math.random().toString(36).substr(2, 9),
+    rgb,
+    hex: rgbToHex(rgb),
+    hsl: rgbToHsl(rgb),
+    locked: false
+  };
+}
+
+function updatePalette() {
+  const targetSize = state.size;
+  const currentColors = state.colors;
+
+  const newColors = [];
+  for (let i = 0; i < targetSize; i++) {
+    if (currentColors[i] && currentColors[i].locked) {
+      newColors.push(currentColors[i]);
+    } else {
+      newColors.push(createColorObject(currentColors[i] ? currentColors[i].id : null));
+    }
+  }
+
+  state.colors = newColors;
+  renderPalette();
+}
+
+function toggleLock(id) {
+  const color = state.colors.find(c => c.id === id);
+  if (color) {
+    color.locked = !color.locked;
+    renderPalette();
+    announceToSR(`Color ${getColorString(color, state.format)} ${color.locked ? 'bloqueado' : 'desbloqueado'}`);
+  }
+}
+
+// NOTIFICACIONES Y ANUNCIOS
+function announceToSR(message) {
+  srAnnouncements.textContent = message;
+}
+
+function showToast(message) {
+  toastMessage.textContent = message;
+  toast.classList.add('show');
+  toast.setAttribute('aria-hidden', 'false');
+
+  if (toastTimeout) clearTimeout(toastTimeout);
+  
+  toastTimeout = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.setAttribute('aria-hidden', 'true');
+  }, 3000);
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(`¡Copiado ${text} al portapapeles!`);
+    announceToSR(`Código de color ${text} copiado al portapapeles`);
+  }).catch(err => {
+    console.error('Error al copiar: ', err);
+  });
+}
+
+// RENDERIZADO DOM
+function renderPalette() {
+  paletteGrid.className = `palette-grid grid-cols-${state.size}`;
+  paletteGrid.innerHTML = '';
+
+  state.colors.forEach((color, index) => {
+    const colorString = getColorString(color, state.format);
+    const isLight = isLightColor(color.rgb.r, color.rgb.g, color.rgb.b);
+    const textClass = isLight ? 'dark-text' : 'light-text';
+
+    const card = document.createElement('article');
+    card.className = `color-card ${textClass}`;
+    card.style.backgroundColor = color.hex;
+
+    card.innerHTML = `
+      <div class="card-header">
+        <button 
+          type="button" 
+          class="lock-btn" 
+          aria-pressed="${color.locked}" 
+          aria-label="${color.locked ? 'Desbloquear color ' + colorString : 'Bloquear color ' + colorString}"
+          title="${color.locked ? 'Desbloquear' : 'Bloquear'}"
+          data-id="${color.id}"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            ${color.locked 
+              ? '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>'
+              : '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>'
+            }
+          </svg>
+        </button>
+      </div>
+
+      <div class="card-body">
+        <h2 class="color-title">${colorString}</h2>
+        <button 
+          type="button" 
+          class="copy-btn" 
+          aria-label="Copiar código de color ${colorString}"
+          data-color="${colorString}"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span>Copiar</span>
+        </button>
+      </div>
+    `;
+
+    // Event listeners individuales para botones de cada tarjeta
+    const lockBtn = card.querySelector('.lock-btn');
+    lockBtn.addEventListener('click', () => toggleLock(color.id));
+
+    const copyBtn = card.querySelector('.copy-btn');
+    copyBtn.addEventListener('click', () => copyToClipboard(colorString));
+
+    paletteGrid.appendChild(card);
+  });
+}
+
+// EVENT LISTENERS GLOBALES Y CONFIGURACIÓN
+paletteSizeSelect.addEventListener('change', (e) => {
+  state.size = parseInt(e.target.value, 10);
+  updatePalette();
+  announceToSR(`Tamaño de paleta cambiado a ${state.size} colores`);
+});
+
+colorFormatSelect.addEventListener('change', (e) => {
+  state.format = e.target.value;
+  renderPalette();
+  announceToSR(`Formato de color cambiado a ${state.format}`);
+});
+
+generateBtn.addEventListener('click', () => {
+  updatePalette();
+  announceToSR('Nueva paleta de colores generada');
+});
+
+// Atajo por teclado (Barra espaciadora para generar)
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'SELECT' && e.target.tagName !== 'INPUT') {
+    e.preventDefault();
+    updatePalette();
+    announceToSR('Nueva paleta de colores generada mediante barra espaciadora');
+  }
+});
+
+// INICIALIZACIÓN DE LA APLICACIÓN
+function init() {
+  updatePalette();
+}
+
+init();
