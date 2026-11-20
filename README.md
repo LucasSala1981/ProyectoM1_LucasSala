@@ -18,4 +18,11 @@ Tambien como función rápida, puedes utilizar la barra espaciadora del teclado,
 
 - Se puede copiar el código del color generado, para utilizarlo en lo que necesites
 
+## Como ejecutar la aplicacion: 
 
+- No necesitás instalar Node.js, React ni ninguna otra herramienta.
+1. Creá la carpeta generador-paletas.
+2. Creá los tres archivos respetando las rutas indicadas.
+3. Copiá cada código en su archivo correspondiente.
+4. Abrí index.html con Google Chrome.
+5. Probá las distintas opciones.
